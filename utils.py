@@ -38,6 +38,9 @@ logger = logging.getLogger("TwitchDrops")
 
 
 def set_root_icon(root: tk.Tk, image_path: Path | str) -> None:
+    if sys.platform == "darwin" and IS_PACKAGED:
+        # keep the .app bundle's own icon in the Dock, instead of replacing it with the raw image
+        return
     with Image_module.open(image_path) as image:
         icon_photo = PhotoImage(master=root, image=image)
     root.iconphoto(True, icon_photo)  # type: ignore[arg-type]
