@@ -1,4 +1,6 @@
-# Twitch Drops Miner
+# Twitch Drops Miner (Binhex-Fork)
+
+> **This is a fork** of [DevilXD/TwitchDropsMiner](https://github.com/DevilXD/TwitchDropsMiner), created by DevilXD and contributors, and based on the work from [pull request #1180](https://github.com/DevilXD/TwitchDropsMiner/pull/1180). **This fork is ONLY for Apple Silicon (arm64) Macs.** It is not built, tested or supported on Windows, Linux or Intel Macs - use the [original project](https://github.com/DevilXD/TwitchDropsMiner) for those platforms. It is not affiliated with or endorsed by the original author. Original code is licensed under the MIT License, see [LICENSE](LICENSE).
 
 This application allows you to AFK mine timed Twitch drops, without having to worry about switching channels when the one you were watching goes offline, claiming the drops, or even receiving the stream data itself. This helps you save on bandwidth and hassle.
 

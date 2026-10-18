@@ -99,14 +99,22 @@ SCRIPTS_PATH = Path(VENV_PATH, SYS_SCRIPTS)
 # Translations path
 # NOTE: These don't have to be available to the end-user, so the path points to the internal dir
 LANG_PATH = _resource_path("lang")
+# User data path
+# NOTE: A packaged macOS app keeps its executable inside the .app bundle, so storing data next
+# to it would wipe the settings and login every time the app is replaced with a new version.
+if IS_PACKAGED and sys.platform == "darwin":
+    DATA_DIR = Path.home() / "Library" / "Application Support" / "TwitchDropsMiner"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DATA_DIR = WORKING_DIR
 # Other Paths
-LOG_PATH = Path(WORKING_DIR, "log.txt")
-DUMP_PATH = Path(WORKING_DIR, "dump.dat")
-LOCK_PATH = Path(WORKING_DIR, "lock.file")
-CACHE_PATH = Path(WORKING_DIR, "cache")
+LOG_PATH = Path(DATA_DIR, "log.txt")
+DUMP_PATH = Path(DATA_DIR, "dump.dat")
+LOCK_PATH = Path(DATA_DIR, "lock.file")
+CACHE_PATH = Path(DATA_DIR, "cache")
 CACHE_DB = Path(CACHE_PATH, "mapping.json")
-COOKIES_PATH = Path(WORKING_DIR, "cookies.jar")
-SETTINGS_PATH = Path(WORKING_DIR, "settings.json")
+COOKIES_PATH = Path(DATA_DIR, "cookies.jar")
+SETTINGS_PATH = Path(DATA_DIR, "settings.json")
 # Typing
 JsonType = Dict[str, Any]
 URLType = NewType("URLType", str)
@@ -129,7 +137,7 @@ PING_TIMEOUT = timedelta(seconds=10)
 ONLINE_DELAY = timedelta(seconds=120)
 WATCH_INTERVAL = timedelta(seconds=20)
 # Strings
-WINDOW_TITLE = f"Twitch Drops Miner v{__version__} (by DevilXD)"
+WINDOW_TITLE = f"Twitch Drops Miner (Binhex-Fork) v{__version__} (arm64)"
 # Logging
 LOGGING_LEVELS = {
     0: logging.ERROR,

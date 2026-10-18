@@ -12,6 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from collections import abc
 from textwrap import dedent
+from contextlib import suppress
 from math import log10, ceil
 from dataclasses import dataclass
 from tkinter.font import Font, nametofont
@@ -120,10 +121,13 @@ class PlaceholderEntry(ttk.Entry):
         """
         if self._ph:
             self._ph = False
-            super().delete(0, "end")
+            # NOTE: on macOS, the combobox menu sets the selected value before focus returns,
+            # but <<ComboboxSelected>> arrives after - only clear the box if it's the placeholder
+            if super().get() == self._ph_text:
+                super().delete(0, "end")
+                if self._prefill:
+                    super().insert("end", self._prefill)
             super().config(foreground=self._text_color, show=self._show)
-            if self._prefill:
-                super().insert("end", self._prefill)
 
     def _focus_in(self, event: tk.Event[PlaceholderEntry]) -> None:
         self._remove_placeholder()
@@ -2432,7 +2436,7 @@ class HelpTab:
         bottom_frame.grid(column=0, row=1, sticky="nsew")
         irow = 0
         # About
-        about = ttk.LabelFrame(center_frame, padding=(4, 0, 4, 4), text="About")
+        about = ttk.LabelFrame(center_frame, padding=(4, 0, 4, 4), text=WINDOW_TITLE)
         about.grid(column=0, row=(irow := irow + 1), sticky="nsew", padx=2)
         about.columnconfigure(2, weight=1)
         # About - created by
@@ -2562,8 +2566,9 @@ class GUIManager:
             foreground=self._fixed_map("foreground"),
             background=self._fixed_map("background"),
         )
-        # add padding to the tab names
-        style.configure("TNotebook.Tab", padding=[8, 4])
+        # add padding to the tab names (not on macOS, where the native tab style squishes and overlaps with it)
+        if sys.platform != "darwin":
+            style.configure("TNotebook.Tab", padding=[8, 4])
         # Skip these for classic theme or macOS
         if theme != "classic" and sys.platform != "darwin":
             # remove Notebook.focus from the Notebook.Tab layout tree to avoid an ugly dotted line
