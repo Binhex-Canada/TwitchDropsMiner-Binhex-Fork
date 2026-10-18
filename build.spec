@@ -154,6 +154,6 @@ if sys.platform == "darwin":
     app = BUNDLE(
         source,
         name=f'{app_name}.app',
-        icon="icons/pickaxe.ico",
+        icon="icons/pickaxe.icns",
         bundle_identifier='com.twitchdrops.miner',
     )
