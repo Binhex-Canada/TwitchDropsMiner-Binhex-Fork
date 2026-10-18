@@ -11,6 +11,7 @@ This application allows you to AFK mine timed Twitch drops, without having to wo
 - Fixes: inventory reload crash (missing import), macOS combobox selections being cleared, squished macOS tabs.
 - Includes the work from upstream PR #1180.
 - Window title and About box show the fork name and version.
+- macOS-style app icon (rounded box) that stays the same in the Dock whether the app is running or not.
 
 ### How It Works:
 
