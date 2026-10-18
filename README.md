@@ -4,6 +4,14 @@
 
 This application allows you to AFK mine timed Twitch drops, without having to worry about switching channels when the one you were watching goes offline, claiming the drops, or even receiving the stream data itself. This helps you save on bandwidth and hassle.
 
+### What this fork changes (v16.0.1-mac-arm64):
+
+- Native macOS arm64 build, packaged as a one-dir `.app` for faster startup.
+- **Settings, login and cache now survive upgrades:** app data lives in `~/Library/Application Support/TwitchDropsMiner`, so replacing the `.app` no longer wipes them.
+- Fixes: inventory reload crash (missing import), macOS combobox selections being cleared, squished macOS tabs.
+- Includes the work from upstream PR #1180.
+- Window title and About box show the fork name and version.
+
 ### How It Works:
 
 Every several seconds, the application pretends to watch a particular stream by fetching stream metadata - this is enough to advance the drops. Note that this completely bypasses the need to download any actual stream video and sound. To keep the status (ONLINE or OFFLINE) of the channels up-to-date, there's a websocket connection established that receives events about streams going up or down, or updates regarding the current amount of viewers.
