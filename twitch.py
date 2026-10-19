@@ -44,6 +44,7 @@ from constants import (
     CALL,
     MAX_INT,
     DUMP_PATH,
+    CACHE_PATH,
     COOKIES_PATH,
     MAX_CHANNELS,
     GQL_QUERIES,
@@ -1542,46 +1543,72 @@ class Twitch:
         if self.settings.proxy:
             request_kwargs["proxy"] = self.settings.proxy
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=20)
-            async with aiohttp.ClientSession(
-                timeout=timeout,
-                cookie_jar=aiohttp.DummyCookieJar(),
-                headers={"User-Agent": "TwitchDropsMiner campaign fallback"},
-            ) as session:
-                async with session.get(catalog_url, **request_kwargs) as response:
-                    if response.status != 200:
-                        raise RequestException(
-                            f"Campaign catalog returned HTTP {response.status}"
-                        )
-                    payload: JsonType = await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, RequestException) as exc:
-            logger.warning(f"Campaign catalog fallback failed: {exc}")
-            return {}
-
-        groups = payload.get("data")
-        if not isinstance(groups, list):
-            logger.warning("Campaign catalog fallback returned an invalid payload")
-            return {}
-
-        # Reject materially stale snapshots instead of presenting campaigns that
-        # may already have ended. The service advertises a 60-second refresh
-        # interval, but allow a generous grace period for transient delays.
-        last_updated_raw = payload.get("lastUpdatedAt")
-        refresh_interval = payload.get("refreshIntervalSeconds", 60)
-        try:
-            refresh_seconds = max(1, int(refresh_interval))
-            last_updated = timestamp(cast(str, last_updated_raw))
-        except (TypeError, ValueError):
-            logger.warning("Campaign catalog fallback returned invalid freshness metadata")
-            return {}
+        cache_file = CACHE_PATH / "campaign_catalog.json"
         now = datetime.now(timezone.utc)
-        max_age = timedelta(seconds=max(300, refresh_seconds * 5))
-        if last_updated > now + timedelta(minutes=2) or now - last_updated > max_age:
+
+        def parse_groups(data: Any, *, check_fresh: bool) -> list[Any] | None:
+            # Reject materially stale snapshots instead of presenting campaigns that
+            # may already have ended. The service advertises a 60-second refresh
+            # interval, but allow a generous grace period for transient delays.
+            if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+                return None
+            if check_fresh:
+                refresh_interval = data.get("refreshIntervalSeconds", 60)
+                try:
+                    refresh_seconds = max(1, int(refresh_interval))
+                    last_updated = timestamp(cast(str, data.get("lastUpdatedAt")))
+                except (TypeError, ValueError):
+                    return None
+                max_age = timedelta(seconds=max(300, refresh_seconds * 5))
+                if last_updated > now + timedelta(minutes=2) or now - last_updated > max_age:
+                    return None
+            return data["data"]
+
+        groups: list[Any] | None = None
+        last_error: Exception | str = "invalid or stale catalog data"
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(2 * attempt)
+            try:
+                timeout = aiohttp.ClientTimeout(total=20)
+                async with aiohttp.ClientSession(
+                    timeout=timeout,
+                    cookie_jar=aiohttp.DummyCookieJar(),
+                    headers={"User-Agent": "TwitchDropsMiner campaign fallback"},
+                ) as session:
+                    async with session.get(catalog_url, **request_kwargs) as response:
+                        if response.status != 200:
+                            raise RequestException(
+                                f"Campaign catalog returned HTTP {response.status}"
+                            )
+                        payload: JsonType = await response.json()
+            except (
+                aiohttp.ClientError, asyncio.TimeoutError, ValueError, RequestException
+            ) as exc:
+                last_error = exc
+                continue
+            groups = parse_groups(payload, check_fresh=True)
+            if groups is not None:
+                # remember the last good catalog, so an outage doesn't blind the miner
+                with suppress(OSError):
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(json.dumps(payload), encoding="utf8")
+                break
+            last_error = "invalid or stale catalog data"
+
+        if groups is None:
+            logger.warning(f"Campaign catalog fallback failed: {last_error}")
+            # fall back to the last good copy; ended campaigns are still filtered out below
+            try:
+                cached = json.loads(cache_file.read_text(encoding="utf8"))
+            except (OSError, ValueError):
+                return {}
+            groups = parse_groups(cached, check_fresh=False)
+            if groups is None:
+                return {}
             logger.warning(
-                "Campaign catalog fallback is stale; refusing to use outdated campaign data"
+                "Using the last saved campaign catalog; campaigns added since then are missing"
             )
-            return {}
 
         applicable_statuses = ("ACTIVE", "UPCOMING")
         campaigns: dict[str, JsonType] = {}
@@ -1673,6 +1700,11 @@ class Twitch:
             # campaign dashboard to this client. Use public metadata as the
             # discovery layer and keep account-specific inventory data authoritative.
             catalog_campaigns = await self.fetch_campaign_catalog()
+            logger.info(
+                f"Campaigns: {len(available_campaigns)} from Twitch, "
+                f"{len(catalog_campaigns)} from the public catalog, "
+                f"{len(inventory_data)} in progress"
+            )
             inventory_data = self._merge_data(inventory_data, catalog_campaigns)
         else:
             # Normal clients can still resolve campaign details directly from Twitch.
