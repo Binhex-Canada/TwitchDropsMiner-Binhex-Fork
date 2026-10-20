@@ -392,7 +392,7 @@ jobs:
 
       - name: Download build artifacts from previous jobs
         if: steps.latest.outputs.publish == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
