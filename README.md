@@ -12,6 +12,7 @@ This application allows you to AFK mine timed Twitch drops, without having to wo
 - Includes the work from upstream PR #1180.
 - Window title and About box show the fork name and version.
 - macOS-style app icon (rounded box) that stays the same in the Dock whether the app is running or not.
+- **Smarter campaign picking:** campaigns whose drops can no longer finish before they end are skipped when something else can be mined (patch by [@kdcao1](https://github.com/kdcao1), from upstream [PR #1202](https://github.com/DevilXD/TwitchDropsMiner/pull/1202)).
 - **More reliable campaign list:** Twitch returns no campaigns to this client, so the list comes from a third-party public catalog (`twitch-drops-api.sunkwi.com`, via PR #1180). It now retries on failure and keeps the last good copy on disk, so an outage no longer hides campaigns. Only public campaign metadata is requested; no login or account data is sent to it.
 
 ### How It Works:
