@@ -709,7 +709,8 @@ class Twitch:
                 )
                 # Campaigns that can still be completed in time are preferred. Ones that
                 # can't are only used if there is nothing else to mine.
-                for require_finishable in (True, False):
+                skip_unfinishable = self.settings.skip_unfinishable
+                for require_finishable in ((True, False) if skip_unfinishable else (False,)):
                     for campaign in sorted_campaigns:
                         game: Game = campaign.game
                         if (
@@ -1785,9 +1786,10 @@ class Twitch:
             self._drops.update({drop.id: drop for drop in campaign.drops})
             if campaign.can_earn_within(next_hour):
                 switch_triggers.update(campaign.time_triggers)
-                finish_triggers = campaign.finish_triggers()
-                self._deadline_triggers.update(finish_triggers)
-                switch_triggers.update(finish_triggers)
+                if self.settings.skip_unfinishable:
+                    finish_triggers = campaign.finish_triggers()
+                    self._deadline_triggers.update(finish_triggers)
+                    switch_triggers.update(finish_triggers)
             self.inventory.append(campaign)
             self._campaigns[campaign.id] = campaign
         # Register campaigns in the virtualized GUI. add_campaign() is now
@@ -1829,7 +1831,10 @@ class Twitch:
             if campaign.can_earn(watching_channel):
                 campaigns.append(campaign)
         if campaigns:
-            campaigns.sort(key=lambda c: (not c.can_finish(), c.remaining_minutes))
+            if self.settings.skip_unfinishable:
+                campaigns.sort(key=lambda c: (not c.can_finish(), c.remaining_minutes))
+            else:
+                campaigns.sort(key=lambda c: c.remaining_minutes)
             return campaigns[0]
         return None
 

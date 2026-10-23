@@ -163,6 +163,7 @@ class GUISettingsGeneral(TypedDict):
     tray_notifications: str
     dark_mode: str
     priority_mode: str
+    skip_unfinishable: str
     proxy: str
 
 
@@ -379,6 +380,7 @@ default_translation: Translation = {
                 "tray_notifications": "Tray notifications: ",
                 "dark_mode": "Dark mode: ",
                 "priority_mode": "Priority mode: ",
+                "skip_unfinishable": "Skip drops that can't finish in time: ",
                 "proxy": "Proxy (requires restart):",
             },
             "advanced": {

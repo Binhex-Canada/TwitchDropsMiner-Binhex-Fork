@@ -1901,6 +1901,7 @@ class _SettingsVars(TypedDict):
     tray_notifications: IntVar
     enable_badges_emotes: IntVar
     available_drops_check: IntVar
+    skip_unfinishable: IntVar
 
 
 class SettingsPanel:
@@ -1939,6 +1940,9 @@ class SettingsPanel:
             ),
             "available_drops_check": IntVar(
                 master, int(self._settings.available_drops_check)
+            ),
+            "skip_unfinishable": IntVar(
+                master, int(self._settings.skip_unfinishable)
             ),
         }
         self._game_names: set[str] = set()
@@ -2016,6 +2020,18 @@ class SettingsPanel:
             command=self.priority_mode,
             textvariable=self._vars["priority_mode"],
             values=list(self.PRIORITY_MODES.values()),
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            checkboxes_frame, text=_("gui", "settings", "general", "skip_unfinishable")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            checkboxes_frame,
+            variable=self._vars["skip_unfinishable"],
+            command=lambda: setattr(
+                self._settings,
+                "skip_unfinishable",
+                bool(self._vars["skip_unfinishable"].get()),
+            ),
         ).grid(column=1, row=irow, sticky="w")
 
         # proxy frame
@@ -3176,6 +3192,7 @@ if __name__ == "__main__":
                 tray_notifications=True,
                 enable_badges_emotes=False,
                 available_drops_check=False,
+                skip_unfinishable=True,
                 logging_level=LOGGING_LEVELS[0],
                 priority_mode=PriorityMode.PRIORITY_ONLY,
             )
