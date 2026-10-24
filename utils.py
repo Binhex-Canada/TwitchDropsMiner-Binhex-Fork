@@ -8,6 +8,7 @@ import json
 import random
 import string
 import asyncio
+import subprocess
 import logging
 import traceback
 import webbrowser
@@ -94,6 +95,37 @@ def lock_file(path: Path) -> tuple[bool, io.TextIOWrapper]:
         return True, file
     # for unsupported systems, just always return True
     return True, file
+
+
+class SleepInhibitor:
+    """
+    Keeps a Mac from going to sleep while mining, by running 'caffeinate' alongside the miner.
+    The display can still sleep. caffeinate exits by itself when the miner process ends.
+    """
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen[bytes] | None = None
+
+    def start(self) -> None:
+        if sys.platform != "darwin":
+            return
+        if self._proc is not None and self._proc.poll() is None:
+            return  # already running
+        try:
+            self._proc = subprocess.Popen(
+                ["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            logger.warning("Unable to keep the Mac awake: caffeinate failed to start")
+            self._proc = None
+
+    def stop(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is not None and proc.poll() is None:
+            with suppress(OSError):
+                proc.terminate()
 
 
 def json_minify(data: JsonType | list[JsonType]) -> str:

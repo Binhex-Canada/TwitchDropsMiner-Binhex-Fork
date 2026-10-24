@@ -164,6 +164,7 @@ class GUISettingsGeneral(TypedDict):
     dark_mode: str
     priority_mode: str
     skip_unfinishable: str
+    keep_awake: str
     proxy: str
 
 
@@ -381,6 +382,7 @@ default_translation: Translation = {
                 "dark_mode": "Dark mode: ",
                 "priority_mode": "Priority mode: ",
                 "skip_unfinishable": "Skip drops that can't finish in time: ",
+                "keep_awake": "Keep Mac awake while mining: ",
                 "proxy": "Proxy (requires restart):",
             },
             "advanced": {

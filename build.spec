@@ -135,6 +135,7 @@ try:
         optimize=optimize,
         exclude_binaries=one_dir,
         icon="icons/pickaxe.ico",
+        target_arch="arm64" if sys.platform == "darwin" else None,  # fail on non-arm64 parts
     )
 except PermissionError as exc:
     exc_text: str = format_exc()
@@ -161,5 +162,7 @@ if sys.platform == "darwin":
             # shown in Finder's Get Info and the app's About panel
             "CFBundleShortVersionString": __version__,
             "CFBundleVersion": __version__,
+            # don't let macOS throttle the miner while its window is hidden (App Nap)
+            "NSAppSleepDisabled": True,
         },
     )

@@ -1902,6 +1902,7 @@ class _SettingsVars(TypedDict):
     enable_badges_emotes: IntVar
     available_drops_check: IntVar
     skip_unfinishable: IntVar
+    keep_awake: IntVar
 
 
 class SettingsPanel:
@@ -1944,6 +1945,7 @@ class SettingsPanel:
             "skip_unfinishable": IntVar(
                 master, int(self._settings.skip_unfinishable)
             ),
+            "keep_awake": IntVar(master, int(self._settings.keep_awake)),
         }
         self._game_names: set[str] = set()
         master.rowconfigure(0, weight=1)
@@ -2033,6 +2035,15 @@ class SettingsPanel:
                 bool(self._vars["skip_unfinishable"].get()),
             ),
         ).grid(column=1, row=irow, sticky="w")
+        if sys.platform == "darwin":
+            ttk.Label(
+                checkboxes_frame, text=_("gui", "settings", "general", "keep_awake")
+            ).grid(column=0, row=(irow := irow + 1), sticky="e")
+            ttk.Checkbutton(
+                checkboxes_frame,
+                variable=self._vars["keep_awake"],
+                command=self.update_keep_awake,
+            ).grid(column=1, row=irow, sticky="w")
 
         # proxy frame
         proxy_frame = ttk.Frame(general_center)
@@ -2194,6 +2205,11 @@ class SettingsPanel:
             text=_("gui", "settings", "reload"),
             command=self._manager._twitch.state_change(State.INVENTORY_FETCH),
         ).grid(column=1, row=0)
+
+    def update_keep_awake(self) -> None:
+        enabled = bool(self._vars["keep_awake"].get())
+        self._settings.keep_awake = enabled
+        self._manager._twitch.update_sleep_inhibitor()
 
     def clear_selection(self) -> None:
         self._priority_list.selection_clear(0, "end")
@@ -3193,6 +3209,7 @@ if __name__ == "__main__":
                 enable_badges_emotes=False,
                 available_drops_check=False,
                 skip_unfinishable=True,
+                keep_awake=True,
                 logging_level=LOGGING_LEVELS[0],
                 priority_mode=PriorityMode.PRIORITY_ONLY,
             )

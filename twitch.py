@@ -37,6 +37,7 @@ from utils import (
     create_nonce,
     task_wrapper,
     RateLimiter,
+    SleepInhibitor,
     AwaitableValue,
     ExponentialBackoff,
 )
@@ -483,6 +484,7 @@ class Twitch:
         # Storing and watching channels
         self.channels: OrderedDict[int, Channel] = OrderedDict()
         self.watching_channel: AwaitableValue[Channel] = AwaitableValue()
+        self._sleep_inhibitor = SleepInhibitor()
         self._watching_task: asyncio.Task[None] | None = None
         self._watching_restart = asyncio.Event()
         # Websocket
@@ -550,6 +552,7 @@ class Twitch:
         self._drops.clear()
         self.channels.clear()
         self.inventory.clear()
+        self._sleep_inhibitor.stop()
         self._auth_state.clear()
         self.wanted_games.clear()
         self._mnt_triggers.clear()
@@ -1126,14 +1129,23 @@ class Twitch:
         self.gui.tray.change_icon("active")
         self.gui.channels.set_watching(channel)
         self.watching_channel.set(channel)
+        self.update_sleep_inhibitor()
         if update_status:
             status_text = _("status", "watching").format(channel=channel.name)
             self.print(status_text)
             self.gui.status.update(status_text)
 
+    def update_sleep_inhibitor(self) -> None:
+        # keep the Mac awake only while we're actually watching a channel
+        if self.settings.keep_awake and self.watching_channel.has_value():
+            self._sleep_inhibitor.start()
+        else:
+            self._sleep_inhibitor.stop()
+
     def stop_watching(self):
         self.gui.clear_drop()
         self.watching_channel.clear()
+        self.update_sleep_inhibitor()
         self.gui.channels.clear_watching()
 
     def restart_watching(self):
