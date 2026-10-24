@@ -14,6 +14,7 @@ if SELF_PATH not in sys.path:
     sys.path.insert(0, SELF_PATH)
 
 from constants import WORKING_DIR, SITE_PACKAGES_PATH, DEFAULT_LANG
+from version import __version__
 
 if TYPE_CHECKING:
     from PyInstaller.building.splash import Splash
@@ -156,4 +157,9 @@ if sys.platform == "darwin":
         name=f'{app_name}.app',
         icon="icons/pickaxe.icns",
         bundle_identifier='com.twitchdrops.miner',
+        info_plist={
+            # shown in Finder's Get Info and the app's About panel
+            "CFBundleShortVersionString": __version__,
+            "CFBundleVersion": __version__,
+        },
     )
