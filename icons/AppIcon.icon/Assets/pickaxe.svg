@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- handle -->
+  <line x1="250" y1="820" x2="672" y2="368" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round"/>
+  <!-- double-pointed head, curved away from the handle -->
+  <path d="M 452 145 Q 828 196 908 572 Q 640 420 452 145 Z" fill="#FFFFFF"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- pavilion -->
+  <path d="M 590 724 L 870 724 L 730 892 Z" fill="#4FD8C6"/>
+  <path d="M 670 724 L 790 724 L 730 892 Z" fill="#7CF0E0"/>
+  <!-- crown -->
+  <path d="M 590 724 L 654 660 L 806 660 L 870 724 Z" fill="#B8FFF5"/>
+  <path d="M 670 724 L 694 660 L 766 660 L 790 724 Z" fill="#E4FFFB"/>
+</svg>

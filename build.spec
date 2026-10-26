@@ -69,6 +69,34 @@ hiddenimports: list[str] = [
     "setuptools._distutils.archive_util",
 ]
 
+mac_icon: str = "icons/pickaxe.icns"
+mac_icon_plist: dict[str, Any] = {}
+if sys.platform == "darwin":
+    # Compile the Icon Composer icon, so macOS gets the dark, tinted and clear variants.
+    # Without Xcode's actool, fall back to the flat pickaxe.icns.
+    import subprocess
+    # actool resolves relative paths against the .icon's folder, so use absolute ones
+    icon_build_dir = Path("build", "AppIcon").resolve()
+    icon_build_dir.mkdir(parents=True, exist_ok=True)
+    actool = subprocess.run(
+        [
+            "xcrun", "actool", str(Path("icons", "AppIcon.icon").resolve()),
+            "--compile", str(icon_build_dir),
+            "--platform", "macosx",
+            "--minimum-deployment-target", "11.0",
+            "--app-icon", "AppIcon",
+            "--include-all-app-icons",
+            "--output-partial-info-plist", str(icon_build_dir / "partial.plist"),
+        ],
+        capture_output=True,
+    )
+    if actool.returncode == 0 and (icon_build_dir / "Assets.car").exists():
+        datas.append((icon_build_dir / "Assets.car", "."))
+        mac_icon = str(icon_build_dir / "AppIcon.icns")
+        mac_icon_plist = {"CFBundleIconName": "AppIcon"}
+    else:
+        print("actool unavailable, using the flat pickaxe.icns app icon")
+
 if sys.platform == "linux":
     # Needed files for better system tray support on Linux via pystray (AppIndicator backend).
     arch: str = platform.machine()
@@ -156,7 +184,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         source,
         name=f'{app_name}.app',
-        icon="icons/pickaxe.icns",
+        icon=mac_icon,
         bundle_identifier='com.twitchdrops.miner',
         info_plist={
             # shown in Finder's Get Info and the app's About panel
@@ -164,5 +192,6 @@ if sys.platform == "darwin":
             "CFBundleVersion": __version__,
             # don't let macOS throttle the miner while its window is hidden (App Nap)
             "NSAppSleepDisabled": True,
+            **mac_icon_plist,
         },
     )
