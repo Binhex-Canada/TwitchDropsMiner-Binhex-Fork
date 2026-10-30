@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from __future__ import annotations
 
+import os
 import sys
 import platform
 import fnmatch
@@ -33,6 +34,11 @@ console: bool = False  # True if you'd want to add a console window (useful for 
 one_dir: bool = True  # True for one-dir, False for one-file
 optimize: int | None = None  # -1/None/0=none, 1=remove asserts, 2=also remove docstrings
 app_name: str = "Twitch Drops Miner (by DevilXD)"
+# TDM_BETA=1 builds a separate beta app with its own bundle ID and data folder,
+# so it can be tested without touching the installed app or its settings
+beta: bool = os.environ.get("TDM_BETA") == "1"
+if beta:
+    app_name = "Twitch Drops Miner Beta (by DevilXD)"
 
 
 # (source_path, dest_path, required)
@@ -185,7 +191,7 @@ if sys.platform == "darwin":
         source,
         name=f'{app_name}.app',
         icon=mac_icon,
-        bundle_identifier='com.twitchdrops.miner',
+        bundle_identifier='com.twitchdrops.miner.beta' if beta else 'com.twitchdrops.miner',
         info_plist={
             # shown in Finder's Get Info and the app's About panel
             "CFBundleShortVersionString": __version__,
@@ -193,5 +199,7 @@ if sys.platform == "darwin":
             # don't let macOS throttle the miner while its window is hidden (App Nap)
             "NSAppSleepDisabled": True,
             **mac_icon_plist,
+            # read by constants.py to pick the beta's own data folder
+            **({"LSEnvironment": {"TDM_DATA_DIR_NAME": "TwitchDropsMiner Beta"}} if beta else {}),
         },
     )

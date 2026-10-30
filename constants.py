@@ -103,7 +103,11 @@ LANG_PATH = _resource_path("lang")
 # NOTE: A packaged macOS app keeps its executable inside the .app bundle, so storing data next
 # to it would wipe the settings and login every time the app is replaced with a new version.
 if IS_PACKAGED and sys.platform == "darwin":
-    DATA_DIR = Path.home() / "Library" / "Application Support" / "TwitchDropsMiner"
+    # a beta build sets TDM_DATA_DIR_NAME (see build.spec), so it doesn't touch the real data
+    DATA_DIR = (
+        Path.home() / "Library" / "Application Support"
+        / os.environ.get("TDM_DATA_DIR_NAME", "TwitchDropsMiner")
+    )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 else:
     DATA_DIR = WORKING_DIR
