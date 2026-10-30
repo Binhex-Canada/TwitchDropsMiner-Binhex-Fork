@@ -93,6 +93,8 @@ class Settings:
         elif name in self._settings:
             self._settings[name] = value  # type: ignore[literal-required]
             self._altered = True
+            # save right away, so changes survive the app being quit or killed
+            self.save()
             return
         raise TypeError(f"{name} is missing a custom setter")
 
@@ -101,6 +103,7 @@ class Settings:
 
     def alter(self) -> None:
         self._altered = True
+        self.save()
 
     def save(self, *, force: bool = False) -> None:
         if self._altered or force:

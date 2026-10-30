@@ -2579,6 +2579,10 @@ class GUIManager:
         self._root = root = Tk(className=WINDOW_TITLE)
         # withdraw immediately to prevent the window from flashing
         self._root.withdraw()
+        if sys.platform == "darwin":
+            # Cmd+Q, the app menu and the Dock's Quit would otherwise exit right away,
+            # skipping the closing sequence that saves the settings
+            root.createcommand("tk::mac::Quit", self.close)
         # root.resizable(False, True)
         set_root_icon(root, resource_path("icons/pickaxe.ico"))
         root.title(WINDOW_TITLE)  # window title
