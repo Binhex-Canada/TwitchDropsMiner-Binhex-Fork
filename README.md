@@ -4,6 +4,14 @@
 
 This application allows you to AFK mine timed Twitch drops, without having to worry about switching channels when the one you were watching goes offline, claiming the drops, or even receiving the stream data itself. This helps you save on bandwidth and hassle.
 
+### Compatibility:
+
+- **Mac:** Apple Silicon only (M1 or newer). Intel Macs are not supported.
+- **macOS:** macOS 27 or newer; tested on macOS 27.2. The Python, Tk and OpenSSL libraries inside the app are built for macOS 27, so it won't start on older versions.
+- **Rosetta:** not needed. The app and every library inside it are native arm64.
+- **Signing:** the app isn't signed with an Apple Developer ID or notarized, so macOS blocks the first launch. See [Notes about the macOS build](#notes-about-the-macos-build) for the one-time fix.
+- **Your data:** settings, login and cache live in `~/Library/Application Support/TwitchDropsMiner`, so replacing the app with a new version keeps them.
+
 ### What this fork changes (v16.0.2-mac-arm64):
 
 - Native macOS arm64 build, packaged as a one-dir `.app` for faster startup.
@@ -85,7 +93,7 @@ Every several seconds, the application pretends to watch a particular stream by 
 - The macOS version is packaged using PyInstaller into a standalone `.app` bundle, distributed as a ZIP archive.
 - Since this application is not signed with a paid Apple Developer Certificate, **macOS Gatekeeper will block it** on the first run (saying it "The application is damaged and can't be opened").
   - **To fix this**: Either open the Terminal in the folder the app is in (or navigating with `cd path/to/folder`) and enter `xattr -cr Twitch Drops Miner (by DevilXD).app` or just type `xattr -cr ` (make sure to put a space at the end), drag and drop the `Twitch Drops Miner (by DevilXD).app` file into the terminal window (this will auto-fill the path) and enter
-- Persistent files (like `cookies.jar`, `settings.json`, `lock.file` and the `cache` folder) are stored inside the application bundle in `Twitch Drops Miner (by DevilXD).app/Contents/MacOS` (to access them Right-click the application and select `Show Package Contents`)
+- Persistent files (like `cookies.jar`, `settings.json`, `lock.file` and the `cache` folder) are stored in `~/Library/Application Support/TwitchDropsMiner` (in Finder, choose Go > Go to Folder and paste that path), so they're kept when the app is replaced with a new version.
 
 ### Advanced Usage:
 
