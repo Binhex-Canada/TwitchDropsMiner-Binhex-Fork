@@ -1564,7 +1564,7 @@ class Twitch:
         The catalog is used only for public campaign metadata; authentication, inventory
         progress, websocket updates, watch events and claiming remain direct Twitch calls.
         """
-        catalog_url = "https://twitch-drops-api.sunkwi.com/v2/drops"
+        catalog_url = "https://drops.sunkwi.com/api/twitch/drops"
         request_kwargs: JsonType = {"headers": {"Accept": "application/json"}}
         if self.settings.proxy:
             request_kwargs["proxy"] = self.settings.proxy
@@ -1576,19 +1576,19 @@ class Twitch:
             # Reject materially stale snapshots instead of presenting campaigns that
             # may already have ended. The service advertises a 60-second refresh
             # interval, but allow a generous grace period for transient delays.
-            if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+            if not isinstance(data, dict) or not isinstance(data.get("games"), list):
                 return None
             if check_fresh:
                 refresh_interval = data.get("refreshIntervalSeconds", 60)
                 try:
                     refresh_seconds = max(1, int(refresh_interval))
-                    last_updated = timestamp(cast(str, data.get("lastUpdatedAt")))
+                    last_updated = timestamp(cast(str, data.get("refreshedAt")))
                 except (TypeError, ValueError):
                     return None
                 max_age = timedelta(seconds=max(300, refresh_seconds * 5))
                 if last_updated > now + timedelta(minutes=2) or now - last_updated > max_age:
                     return None
-            return data["data"]
+            return data["games"]
 
         groups: list[Any] | None = None
         last_error: Exception | str = "invalid or stale catalog data"
