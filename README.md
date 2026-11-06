@@ -23,7 +23,7 @@ This application allows you to AFK mine timed Twitch drops, without having to wo
 - **Smarter campaign picking:** campaigns whose drops can no longer finish before they end are skipped when something else can be mined (on by default, can be turned off in Settings; patch by [@kdcao1](https://github.com/kdcao1), from upstream [PR #1202](https://github.com/DevilXD/TwitchDropsMiner/pull/1202)).
 - **Keeps your Mac awake while mining** (Settings toggle, on by default): the display can still sleep, but the Mac won't idle-sleep and stop mining. App Nap is also disabled, so macOS doesn't throttle the miner while its window is hidden.
 - The app and its About / Get Info panel now show the real version, and the build is pinned to arm64.
-- **More reliable campaign list:** Twitch returns no campaigns to this client, so the list comes from a third-party public catalog (`twitch-drops-api.sunkwi.com`, via PR #1180). It now retries on failure and keeps the last good copy on disk, so an outage no longer hides campaigns. Only public campaign metadata is requested; no login or account data is sent to it.
+- **More reliable campaign list:** Twitch returns no campaigns to this client, so the list comes from a third-party public catalog (`drops.sunkwi.com`, via PR #1180). It now retries on failure and keeps the last good copy on disk, so an outage no longer hides campaigns. Only public campaign metadata is requested; no login or account data is sent to it.
 
 ### How It Works:
 
