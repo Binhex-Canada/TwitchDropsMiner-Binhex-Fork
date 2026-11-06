@@ -12,7 +12,7 @@ This application allows you to AFK mine timed Twitch drops, without having to wo
 - **Signing:** the app isn't signed with an Apple Developer ID or notarized, so macOS blocks the first launch. See [Notes about the macOS build](#notes-about-the-macos-build) for the one-time fix.
 - **Your data:** settings, login and cache live in `~/Library/Application Support/TwitchDropsMiner`, so replacing the app with a new version keeps them.
 
-### What this fork changes (v16.0.2-mac-arm64):
+### What this fork changes (v16.0.3-mac-arm64):
 
 - Native macOS arm64 build, packaged as a one-dir `.app` for faster startup.
 - **Settings, login and cache now survive upgrades:** app data lives in `~/Library/Application Support/TwitchDropsMiner`, so replacing the `.app` no longer wipes them.
