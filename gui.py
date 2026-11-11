@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from tkinter.font import Font, nametofont
 from functools import partial, cached_property
 from datetime import datetime, timedelta, timezone
-from tkinter import Tk, ttk, StringVar, DoubleVar, IntVar
+from tkinter import Tk, ttk, StringVar, IntVar
 from typing import Any, Union, Tuple, TypedDict, NoReturn, Generic, TYPE_CHECKING
 
 import pystray
@@ -617,8 +617,89 @@ class LoginForm:
         self._var.set(f"{status}\n{user_str}")
 
 
+class ProgressBar(tk.Canvas):
+    """
+    A rounded progress bar, that can tell apart the progress Twitch has confirmed
+    (solid fill) from the minutes we've only guessed (lighter fill at the end),
+    and can be split into equal segments (one per drop of a campaign).
+    """
+    MAX_SEGMENTS = 24
+
+    def __init__(self, master: tk.Misc, *, length: int, thickness: int = 12):
+        super().__init__(
+            master, width=length, height=thickness, borderwidth=0, highlightthickness=0
+        )
+        self._value: float = 0.0
+        self._estimated: float = 0.0
+        self._segments: int = 1
+        self._colors: dict[str, str] = {
+            "trough": "#d9d9de",
+            "fill": "#0a84ff",
+            "estimated": "#9ccbff",
+            "done": "#30b350",
+        }
+        self.bind("<Configure>", lambda event: self._redraw())
+
+    def configure_theme(self, *, bg: str, trough: str, fill: str, estimated: str, done: str):
+        self._colors.update(trough=trough, fill=fill, estimated=estimated, done=done)
+        if sys.platform == "darwin":
+            # The native theme paints the group box we sit in with a color of its own,
+            # that also follows the light/dark appearance. Use that same system color,
+            # so the rounded ends of the bar don't show up as a differently shaded box.
+            bg = "systemWindowBackgroundColor1"
+        self.configure(bg=bg)
+        self._redraw()
+
+    def set(self, value: float, *, estimated: float = 0.0, segments: int = 1) -> None:
+        """
+        Value is the total progress (0-1), of which the estimated part is a guess.
+        """
+        value = min(max(value, 0.0), 1.0)
+        estimated = min(max(estimated, 0.0), value)
+        if not 1 <= segments <= self.MAX_SEGMENTS:
+            segments = 1
+        state = (value, estimated, segments)
+        if state != (self._value, self._estimated, self._segments):
+            self._value, self._estimated, self._segments = state
+            self._redraw()
+
+    def _pill(self, start: float, end: float, color: str) -> None:
+        # a thick line with round caps makes for a pill shape
+        height = self.winfo_height()
+        radius = height / 2
+        self.create_line(
+            start + radius,
+            radius,
+            max(end - radius, start + radius),
+            radius,
+            width=height,
+            capstyle="round",
+            fill=color,
+        )
+
+    def _redraw(self) -> None:
+        self.delete("all")
+        width = self.winfo_width()
+        height = self.winfo_height()
+        if width <= height:
+            # not laid out yet
+            return
+        colors = self._colors
+        self._pill(0, width, colors["trough"])
+        if self._value > 0:
+            fill = colors["done"] if self._value >= 1 else colors["fill"]
+            confirmed = self._value - self._estimated
+            if self._estimated > 0:
+                self._pill(0, width * self._value, colors["estimated"])
+            if confirmed > 0:
+                self._pill(0, width * confirmed, fill)
+        # segment dividers go on top, in the color of what's behind the bar
+        for i in range(1, self._segments):
+            x = round(width * i / self._segments)
+            self.create_line(x, 0, x, height, width=2, fill=self["bg"])
+
+
 class _BaseVars(TypedDict):
-    progress: DoubleVar
     percentage: StringVar
     remaining: StringVar
 
@@ -647,13 +728,11 @@ class CampaignProgress:
             "campaign": {
                 "name": StringVar(master),  # campaign name
                 "game": StringVar(master),  # game name
-                "progress": DoubleVar(master),  # controls the progress bar
                 "percentage": StringVar(master),  # percentage display string
                 "remaining": StringVar(master),  # time remaining string, filled via _update_time
             },
             "drop": {
                 "rewards": StringVar(master),  # drop rewards
-                "progress": DoubleVar(master),  # as above
                 "percentage": StringVar(master),  # as above
                 "remaining": StringVar(master),  # as above
             },
@@ -677,13 +756,8 @@ class CampaignProgress:
         ).grid(column=0, row=2, rowspan=2)
         ttk.Label(frame, textvariable=self._vars["campaign"]["percentage"]).grid(column=1, row=2)
         ttk.Label(frame, textvariable=self._vars["campaign"]["remaining"]).grid(column=1, row=3)
-        ttk.Progressbar(
-            frame,
-            mode="determinate",
-            length=self.BAR_LENGTH,
-            maximum=1,
-            variable=self._vars["campaign"]["progress"],
-        ).grid(column=0, row=4, columnspan=2)
+        self._campaign_bar = ProgressBar(frame, length=self.BAR_LENGTH)
+        self._campaign_bar.grid(column=0, row=4, columnspan=2, pady=(3, 2))
         ttk.Separator(
             frame, orient="horizontal"
         ).grid(row=5, columnspan=2, sticky="ew", pady=(4, 0))
@@ -696,17 +770,40 @@ class CampaignProgress:
         ).grid(column=0, row=8, rowspan=2)
         ttk.Label(frame, textvariable=self._vars["drop"]["percentage"]).grid(column=1, row=8)
         ttk.Label(frame, textvariable=self._vars["drop"]["remaining"]).grid(column=1, row=9)
-        ttk.Progressbar(
-            frame,
-            mode="determinate",
-            length=self.BAR_LENGTH,
-            maximum=1,
-            variable=self._vars["drop"]["progress"],
-        ).grid(column=0, row=10, columnspan=2)
+        self._drop_bar = ProgressBar(frame, length=self.BAR_LENGTH)
+        self._drop_bar.grid(column=0, row=10, columnspan=2, pady=(3, 2))
         self._drop: TimedDrop | None = None
         self._seconds: int = 0
         self._timer_task: asyncio.Task[None] | None = None
         self.display(None)
+
+    def configure_theme(self, *, bg: str, trough: str, fill: str, estimated: str, done: str):
+        for bar in (self._campaign_bar, self._drop_bar):
+            bar.configure_theme(bg=bg, trough=trough, fill=fill, estimated=estimated, done=done)
+
+    def _update_bars(self) -> None:
+        drop = self._drop
+        if drop is None:
+            self._drop_bar.set(0.0)
+            self._campaign_bar.set(0.0)
+            return
+        campaign = drop.campaign
+        # let the bars creep forward through the minute that's being counted down,
+        # instead of jumping once a minute
+        partial: float = 0.0
+        if (
+            self._timer_task is not None
+            and 0 < self._seconds < 60
+            and drop.remaining_minutes > 0
+            and drop.required_minutes > 0
+        ):
+            partial = (60 - self._seconds) / 60 / drop.required_minutes
+        self._drop_bar.set(drop.progress + partial, estimated=drop.estimated_progress)
+        self._campaign_bar.set(
+            campaign.progress + partial / max(campaign.total_drops, 1),
+            estimated=campaign.estimated_progress,
+            segments=campaign.total_drops,
+        )
 
     def _divmod(self, minutes: int) -> tuple[int, int]:
         if self._seconds < 60 and minutes > 0:
@@ -735,6 +832,7 @@ class CampaignProgress:
         campaign_vars["remaining"].set(
             _("gui", "progress", "remaining").format(time=f"{hours:>2}:{minutes:02}:{dseconds:02}")
         )
+        self._update_bars()
 
     async def _timer_loop(self):
         self._update_time(60)
@@ -771,24 +869,21 @@ class CampaignProgress:
         if drop is None:
             # clear the drop display
             vars_drop["rewards"].set("...")
-            vars_drop["progress"].set(0.0)
             vars_drop["percentage"].set("-%")
             vars_campaign["name"].set("...")
             vars_campaign["game"].set("...")
-            vars_campaign["progress"].set(0.0)
             vars_campaign["percentage"].set("-%")
             self._update_time(0)
             return
         vars_drop["rewards"].set(drop.rewards_text())
-        vars_drop["progress"].set(drop.progress)
         vars_drop["percentage"].set(f"{drop.progress:6.1%}")
         campaign = drop.campaign
         vars_campaign["name"].set(campaign.name)
         vars_campaign["game"].set(campaign.game.name)
-        vars_campaign["progress"].set(campaign.progress)
         vars_campaign["percentage"].set(
             f"{campaign.progress:6.1%} ({campaign.claimed_drops}/{campaign.total_drops})"
         )
+        self._update_bars()
         if countdown:
             # restart our seconds update timer
             self.start_timer()
@@ -1243,20 +1338,120 @@ class TrayIcon:
             self.icon.icon = self._icon_images[state]
 
 
+class SegmentedTabs(tk.Canvas):
+    """
+    A capsule-shaped tab switcher for a notebook, used on macOS in place of the native tabs.
+    The native ones are drawn as separate outlined boxes in dark mode,
+    which look like they overlap each other.
+    """
+    HEIGHT = 28
+    INSET = 3  # gap between the capsule's edge and the selected tab's highlight
+    PADDING = 18  # horizontal space on each side of a tab's text
+
+    def __init__(self, master: tk.Misc, notebook: ttk.Notebook):
+        super().__init__(master, height=self.HEIGHT, borderwidth=0, highlightthickness=0)
+        self._nb = notebook
+        self._font = nametofont("TkDefaultFont")
+        self._spans: list[tuple[float, float]] = []  # horizontal extents of each tab
+        self._colors: dict[str, str] = {
+            "trough": "#e3e3e8",
+            "selected": "#ffffff",
+            "fg": "#000000",
+            "selected_fg": "#000000",
+        }
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Configure>", lambda event: self.redraw())
+        notebook.bind("<<NotebookTabChanged>>", lambda event: self.redraw(), True)
+
+    def configure_theme(self, *, bg: str, trough: str, selected: str, fg: str, selected_fg: str):
+        self._colors.update(trough=trough, selected=selected, fg=fg, selected_fg=selected_fg)
+        self.configure(bg=bg)
+        self.redraw()
+
+    def _on_click(self, event: tk.Event[tk.Canvas]) -> None:
+        for index, (start, end) in enumerate(self._spans):
+            if start <= event.x < end:
+                self._nb.select(index)
+                break
+
+    def _pill(self, start: float, end: float, inset: int, color: str) -> None:
+        # a thick line with round caps makes for a capsule shape
+        middle = self.HEIGHT / 2
+        radius = middle - inset
+        self.create_line(
+            start + inset + radius,
+            middle,
+            max(end - inset - radius, start + inset + radius),
+            middle,
+            width=radius * 2,
+            capstyle="round",
+            fill=color,
+        )
+
+    def redraw(self) -> None:
+        self.delete("all")
+        self._spans.clear()
+        tabs = self._nb.tabs()
+        if not tabs:
+            return
+        texts: list[str] = [str(self._nb.tab(tab, "text")) for tab in tabs]
+        widths: list[int] = [self._font.measure(text) + 2 * self.PADDING for text in texts]
+        selected: int = self._nb.index("current")
+        colors = self._colors
+        # the capsule is centered within the available width
+        x: float = max((self.winfo_width() - sum(widths)) / 2, 0)
+        self._pill(x, x + sum(widths), 0, colors["trough"])
+        for index, (text, width) in enumerate(zip(texts, widths)):
+            self._spans.append((x, x + width))
+            if index == selected:
+                self._pill(x, x + width, self.INSET, colors["selected"])
+            self.create_text(
+                x + width / 2,
+                self.HEIGHT / 2,
+                text=text,
+                font=self._font,
+                fill=colors["selected_fg"] if index == selected else colors["fg"],
+            )
+            x += width
+
+
 class Notebook:
     def __init__(self, manager: GUIManager, master: ttk.Widget):
-        self._nb = ttk.Notebook(master)
-        self._nb.grid(column=0, row=0, sticky="nsew")
-        master.rowconfigure(0, weight=1)
+        self._switcher: SegmentedTabs | None = None
+        if sys.platform == "darwin":
+            # hide the native tabs and the pane's frame, we draw our own tab switcher instead
+            style = manager._style
+            style.layout("Plain.TNotebook", [])
+            style.layout("Plain.TNotebook.Tab", [])
+            self._nb = ttk.Notebook(master, style="Plain.TNotebook")
+            self._switcher = SegmentedTabs(master, self._nb)
+            self._switcher.grid(column=0, row=0, sticky="ew")
+            self._nb.grid(column=0, row=1, sticky="nsew")
+            master.rowconfigure(1, weight=1)
+        else:
+            self._nb = ttk.Notebook(master)
+            self._nb.grid(column=0, row=0, sticky="nsew")
+            master.rowconfigure(0, weight=1)
         master.columnconfigure(0, weight=1)
         # prevent entries from being selected after switching tabs
-        self._nb.bind("<<NotebookTabChanged>>", lambda event: manager._root.focus_set())
+        # NOTE: added on top of the existing bindings, the tab switcher has one of its own
+        self._nb.bind(
+            "<<NotebookTabChanged>>", lambda event: manager._root.focus_set(), True
+        )
 
     def add_tab(self, widget: ttk.Widget, *, name: str, **kwargs):
         kwargs.pop("text", None)
         if "sticky" not in kwargs:
             kwargs["sticky"] = "nsew"
         self._nb.add(widget, text=name, **kwargs)
+        if self._switcher is not None:
+            self._switcher.redraw()
+
+    def configure_theme(self, *, bg: str, trough: str, selected: str, fg: str, selected_fg: str):
+        if self._switcher is not None:
+            self._switcher.configure_theme(
+                bg=bg, trough=trough, selected=selected, fg=fg, selected_fg=selected_fg
+            )
 
     def current_tab(self) -> int:
         return self._nb.index("current")
@@ -1434,9 +1629,13 @@ class InventoryOverview:
             self._unrealize_all()
 
     def get_status(self, campaign: DropsCampaign) -> tuple[str, str]:
-        if campaign.active:
-            status_text: str = _("gui", "inventory", "status", "active")
-            status_color: str = "green"
+        if campaign.active and campaign.stalled:
+            # mined for a while without earning anything
+            status_text: str = _("gui", "inventory", "status", "stalled")
+            status_color: str = "darkorange"
+        elif campaign.active:
+            status_text = _("gui", "inventory", "status", "active")
+            status_color = "green"
         elif campaign.upcoming:
             status_text = _("gui", "inventory", "status", "upcoming")
             status_color = "goldenrod"
@@ -1444,6 +1643,18 @@ class InventoryOverview:
             status_text = _("gui", "inventory", "status", "expired")
             status_color = "red"
         return (status_text, status_color)
+
+    def refresh_status(self) -> None:
+        """
+        Updates only the campaign status labels, without touching the layout.
+        """
+        for campaign, display in self._campaigns.items():
+            status = self.get_status(campaign)
+            if self._campaign_status.get(campaign) != status:
+                self._campaign_status[campaign] = status
+                status_label = display["status"]
+                if status_label is not None:
+                    status_label.config(text=status[0], foreground=status[1])
 
     def refresh(self):
         visibility_changed = False
@@ -1650,7 +1861,13 @@ class InventoryOverview:
                 takefocus=False,
             ).grid(column=1, row=2, sticky="w", padx=4)
 
-            if campaign.eligible:
+            if campaign.eligible and campaign.linked and campaign.link_assumed:
+                # Twitch didn't tell us, so don't claim that it's linked
+                link_kwargs = {
+                    "text": _("gui", "inventory", "status", "link_unknown"),
+                    "foreground": "goldenrod",
+                }
+            elif campaign.eligible:
                 link_kwargs = {
                     "style": '',
                     "text": _("gui", "inventory", "status", "linked"),
@@ -1902,6 +2119,7 @@ class _SettingsVars(TypedDict):
     enable_badges_emotes: IntVar
     available_drops_check: IntVar
     skip_unfinishable: IntVar
+    skip_stalled: IntVar
     keep_awake: IntVar
 
 
@@ -1945,6 +2163,7 @@ class SettingsPanel:
             "skip_unfinishable": IntVar(
                 master, int(self._settings.skip_unfinishable)
             ),
+            "skip_stalled": IntVar(master, int(self._settings.skip_stalled)),
             "keep_awake": IntVar(master, int(self._settings.keep_awake)),
         }
         self._game_names: set[str] = set()
@@ -2034,6 +2253,14 @@ class SettingsPanel:
                 "skip_unfinishable",
                 bool(self._vars["skip_unfinishable"].get()),
             ),
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            checkboxes_frame, text=_("gui", "settings", "general", "skip_stalled")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            checkboxes_frame,
+            variable=self._vars["skip_stalled"],
+            command=self.update_skip_stalled,
         ).grid(column=1, row=irow, sticky="w")
         if sys.platform == "darwin":
             ttk.Label(
@@ -2203,8 +2430,19 @@ class SettingsPanel:
         ttk.Button(
             reload_frame,
             text=_("gui", "settings", "reload"),
-            command=self._manager._twitch.state_change(State.INVENTORY_FETCH),
+            command=self.reload,
         ).grid(column=1, row=0)
+
+    def reload(self) -> None:
+        twitch = self._manager._twitch
+        # a manual reload also gives the campaigns that earned no progress a fresh try,
+        # for when the user has just linked their account
+        twitch.clear_stalled()
+        twitch.change_state(State.INVENTORY_FETCH)
+
+    def update_skip_stalled(self) -> None:
+        self._settings.skip_stalled = bool(self._vars["skip_stalled"].get())
+        self._manager.inv.refresh_status()
 
     def update_keep_awake(self) -> None:
         enabled = bool(self._vars["keep_awake"].get())
@@ -2485,11 +2723,32 @@ class HelpTab:
             link="https://github.com/DevilXD/TwitchDropsMiner",
             text="https://github.com/DevilXD/TwitchDropsMiner",
         ).grid(column=1, row=1, sticky="nsew")
+        # About - this fork
+        ttk.Label(about, text="This fork: ", anchor="e").grid(column=0, row=2, sticky="nsew")
+        LinkLabel(
+            about,
+            link="https://github.com/Binhex-Canada/TwitchDropsMiner-Binhex-Fork",
+            text="https://github.com/Binhex-Canada/TwitchDropsMiner-Binhex-Fork",
+        ).grid(column=1, row=2, sticky="nsew")
+        ttk.Label(about, text="About this fork: ", anchor="ne").grid(column=0, row=3, sticky="nsew")
+        ttk.Label(
+            about,
+            text=(
+                "A build for Apple Silicon Macs only (macOS 27 or newer), "
+                "not affiliated with or endorsed by DevilXD. "
+                "It keeps your settings and login between upgrades, "
+                "keeps the Mac awake while mining, "
+                "and skips drops that can't finish in time and campaigns that earn no progress. "
+                "For problems with this build, please open an issue on the fork's repository, "
+                "not on the original one."
+            ),
+            wraplength=self.WIDTH,
+        ).grid(column=1, row=3, sticky="nsew")
         # About - donate
         ttk.Separator(
             about, orient="horizontal"
-        ).grid(column=0, row=2, columnspan=3, sticky="nsew")
-        ttk.Label(about, text="Donate: ", anchor="e").grid(column=0, row=3, sticky="nsew")
+        ).grid(column=0, row=4, columnspan=3, sticky="nsew")
+        ttk.Label(about, text="Donate: ", anchor="e").grid(column=0, row=5, sticky="nsew")
         LinkLabel(
             about,
             link="https://www.buymeacoffee.com/DevilXD",
@@ -2498,7 +2757,7 @@ class HelpTab:
                 "please consider donating a small amount of money to support me. Thank you!"
             ),
             wraplength=self.WIDTH,
-        ).grid(column=1, row=3, sticky="nsew")
+        ).grid(column=1, row=5, sticky="nsew")
         # Useful links
         links = ttk.LabelFrame(
             center_frame, padding=(4, 0, 4, 4), text=_("gui", "help", "links", "name")
@@ -2893,6 +3152,12 @@ class GUIManager:
             border = "#3c3c3c"
             muted = "#b3b3b3"
             accent = "#0d99ff"
+            bar_trough = "#3a3a3c"
+            tabs_trough = "#2c2c2e"
+            tabs_selected = "#636366"
+            tabs_selected_fg = "#ffffff"
+            bar_estimated = "#1f5a8a"
+            bar_done = "#32d74b"
         else:
             # Restore original theme if we changed it
             if getattr(self, "_orig_theme_name", '') and self._style.theme_use() == "clam":
@@ -2909,6 +3174,12 @@ class GUIManager:
             border = "#cccccc"
             muted = "#404040"
             accent = "#0a84ff"
+            bar_trough = "#d9d9de"
+            tabs_trough = "#e3e3e8"
+            tabs_selected = "#ffffff"
+            tabs_selected_fg = "#000000"
+            bar_estimated = "#9ccbff"
+            bar_done = "#30b350"
 
         # Setting theme for macOS
         if sys.platform == "darwin":
@@ -3041,6 +3312,19 @@ class GUIManager:
         )
         # Inventory canvas
         self.inv.configure_theme(bg=bg)
+        # Tab switcher (macOS)
+        self.tabs.configure_theme(
+            # the system color follows the light/dark appearance, like the window around it
+            bg="systemWindowBackgroundColor" if sys.platform == "darwin" else bg,
+            trough=tabs_trough,
+            selected=tabs_selected,
+            fg=fg,
+            selected_fg=tabs_selected_fg,
+        )
+        # Progress bars
+        self.progress.configure_theme(
+            bg=bg, trough=bar_trough, fill=accent, estimated=bar_estimated, done=bar_done
+        )
 
         # Tk option database for selection/popup list readability (affects Tk-backed widgets)
         # Global selection colors and listbox defaults (covers Combobox dropdown)
@@ -3165,6 +3449,9 @@ if __name__ == "__main__":
                 active=False,
                 upcoming=True,
                 eligible=False,
+                linked=False,
+                link_assumed=False,
+                stalled=False,
                 finished=False,
                 link_url="https://google.com",
                 image_url=campaign_image_url,
@@ -3177,6 +3464,7 @@ if __name__ == "__main__":
                 required_minutes=tm,
                 remaining_drops=td - cd,
                 progress=(cd * tm + cm) / (td * tm),
+                estimated_progress=0.0,
                 remaining_minutes=(td - cd) * tm - cm,
             ),
             image_url=drop_image_url,
@@ -3189,6 +3477,7 @@ if __name__ == "__main__":
             starts_at=ref_stamp + timedelta(seconds=2),
             ends_at=ref_stamp + timedelta(days=7) - timedelta(seconds=2),
             progress=cm/tm,
+            estimated_progress=0.0,
             current_minutes=cm,
             required_minutes=tm,
             remaining_minutes=tm-cm,
@@ -3213,6 +3502,7 @@ if __name__ == "__main__":
                 enable_badges_emotes=False,
                 available_drops_check=False,
                 skip_unfinishable=True,
+                skip_stalled=True,
                 keep_awake=True,
                 logging_level=LOGGING_LEVELS[0],
                 priority_mode=PriorityMode.PRIORITY_ONLY,
@@ -3220,6 +3510,7 @@ if __name__ == "__main__":
         )
         mock.change_state = lambda state: mock.gui.print(f"State change: {state.value}")
         mock.state_change = lambda state: partial(mock.change_state, state)
+        mock.clear_stalled = lambda: None
         mock.request = aiohttp.request
         # _.set_language("Русский")
         gui = GUIManager(mock)  # type: ignore

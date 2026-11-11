@@ -282,6 +282,13 @@ class TimedDrop(BaseDrop):
         return self.current_minutes / self.required_minutes
 
     @property
+    def estimated_progress(self) -> float:
+        """The part of `progress` that we guessed, without Twitch confirming it."""
+        if self.extra_current_minutes <= 0 or self.required_minutes <= 0:
+            return 0.0
+        return min(self.extra_current_minutes / self.required_minutes, self.progress)
+
+    @property
     def availability(self) -> float:
         now = datetime.now(timezone.utc)
         if self.required_minutes > 0 and self.total_remaining_minutes > 0 and now < self.ends_at:
@@ -345,6 +352,8 @@ class DropsCampaign:
         self.name: str = data["name"]
         self.game: Game = Game(data["game"])
         self.linked: bool = data["self"]["isAccountConnected"]
+        # True if Twitch told us nothing about the linkage, and `linked` is only assumed
+        self.link_assumed: bool = bool(data["self"].get("linkAssumed", False))
         self.link_url: str = data["accountLinkURL"]
         # campaign's image actually comes from the game object
         # we use regex to get rid of the dimensions part (ex. ".../game_id-285x380.jpg")
@@ -441,6 +450,16 @@ class DropsCampaign:
         )
 
     @property
+    def started(self) -> bool:
+        """True if Twitch has ever credited this campaign with any progress."""
+        return any(d.is_claimed or d.real_current_minutes > 0 for d in self.drops)
+
+    @property
+    def stalled(self) -> bool:
+        """True if mining this campaign earned nothing, and it's set aside for now."""
+        return self._twitch.is_stalled(self)
+
+    @property
     def finished(self) -> bool:
         return all(d.is_claimed or d.required_minutes <= 0 for d in self.drops)
 
@@ -463,6 +482,10 @@ class DropsCampaign:
     @property
     def progress(self) -> float:
         return sum(d.progress for d in self.drops) / self.total_drops
+
+    @property
+    def estimated_progress(self) -> float:
+        return sum(d.estimated_progress for d in self.drops) / self.total_drops
 
     @property
     def availability(self) -> float:

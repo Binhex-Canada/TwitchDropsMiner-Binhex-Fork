@@ -127,6 +127,9 @@ TopicProcess: TypeAlias = "abc.Callable[[int, JsonType], Any]"
 # Values
 MAX_INT = sys.maxsize
 MAX_EXTRA_MINUTES = 15
+# Minutes a never-started campaign may be mined on guesses alone, with Twitch confirming
+# no progress, before it's set aside. Has to stay below MAX_EXTRA_MINUTES.
+STALL_MINUTES = 10
 BASE_TOPICS = 2
 MAX_WEBSOCKETS = 8
 WS_TOPICS_LIMIT = 50
@@ -140,6 +143,10 @@ PING_INTERVAL = timedelta(minutes=3)
 PING_TIMEOUT = timedelta(seconds=10)
 ONLINE_DELAY = timedelta(seconds=120)
 WATCH_INTERVAL = timedelta(seconds=20)
+# how long a campaign that earned no progress is set aside for, before it's tried again
+STALL_BENCH = timedelta(hours=3)
+# a progress confirmation this recent means Twitch is crediting something right now
+STALL_CONFIRM_WINDOW = timedelta(minutes=2)
 # Strings
 WINDOW_TITLE = f"Twitch Drops Miner (Binhex-Fork) v{__version__}"
 # Logging

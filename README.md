@@ -12,8 +12,12 @@ This application allows you to AFK mine timed Twitch drops, without having to wo
 - **Signing:** the app isn't signed with an Apple Developer ID or notarized, so macOS blocks the first launch. See [Notes about the macOS build](#notes-about-the-macos-build) for the one-time fix.
 - **Your data:** settings, login and cache live in `~/Library/Application Support/TwitchDropsMiner`, so replacing the app with a new version keeps them.
 
-### What this fork changes (v16.0.3-mac-arm64):
+### What this fork changes (v16.0.4-mac-arm64):
 
+- **Stops wasting time on campaigns that earn nothing** (Settings toggle, on by default): Twitch doesn't tell the miner whether your account is linked for campaigns you haven't started, so it used to assume it was. Now, if a never-started campaign gets no progress confirmed by Twitch for 10 minutes of watching, it's set aside for 3 hours and the next campaign is mined instead. You get a message with the account link, the Inventory tab shows "No progress - check linking", and it's only mined again earlier if there's nothing else to mine. Pressing Reload in Settings gives every campaign a fresh try.
+- The Inventory tab says "Link status unknown" instead of "Linked" when the link state is only assumed.
+- **New tab switcher:** the Main / Inventory / Settings / Help tabs are now a single capsule-shaped switcher, replacing the native tabs that looked like overlapping buttons in dark mode. The Help tab also links to this fork's repository.
+- **New progress bars:** rounded, moving smoothly through each minute instead of jumping, green when complete, with the campaign bar split into one segment per drop. Minutes the miner has only guessed (Twitch hasn't confirmed them yet) are drawn in a lighter shade.
 - Native macOS arm64 build, packaged as a one-dir `.app` for faster startup.
 - **Settings, login and cache now survive upgrades:** app data lives in `~/Library/Application Support/TwitchDropsMiner`, so replacing the `.app` no longer wipes them.
 - Fixes: inventory reload crash (missing import), macOS combobox selections being cleared, squished macOS tabs.

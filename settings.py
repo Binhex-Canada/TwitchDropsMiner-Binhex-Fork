@@ -23,6 +23,7 @@ class SettingsFile(TypedDict):
     enable_badges_emotes: bool
     available_drops_check: bool
     skip_unfinishable: bool
+    skip_stalled: bool
     keep_awake: bool
     priority_mode: PriorityMode
 
@@ -39,6 +40,7 @@ default_settings: SettingsFile = {
     "enable_badges_emotes": False,
     "available_drops_check": False,
     "skip_unfinishable": True,
+    "skip_stalled": True,
     "keep_awake": True,
     "priority_mode": PriorityMode.PRIORITY_ONLY,
 }
@@ -65,6 +67,7 @@ class Settings:
     enable_badges_emotes: bool
     available_drops_check: bool
     skip_unfinishable: bool
+    skip_stalled: bool
     keep_awake: bool
     priority_mode: PriorityMode
 

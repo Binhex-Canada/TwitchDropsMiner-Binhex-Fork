@@ -49,7 +49,10 @@ from constants import (
     COOKIES_PATH,
     MAX_CHANNELS,
     GQL_QUERIES,
+    STALL_BENCH,
+    STALL_MINUTES,
     WATCH_INTERVAL,
+    STALL_CONFIRM_WINDOW,
     State,
     ClientType,
     PriorityMode,
@@ -468,6 +471,13 @@ class Twitch:
         self._mnt_triggers: deque[datetime] = deque()
         # triggers at which a drop stops being completable in time, these re-pick the games
         self._deadline_triggers: set[datetime] = set()
+        # Stall detection: campaigns that are mined without Twitch ever confirming any
+        # progress (usually an account that isn't linked) get set aside for a while.
+        # Keyed by campaign ID, because campaign objects are recreated on every reload.
+        self._stalled: dict[str, datetime] = {}  # campaign ID -> set aside until
+        self._unconfirmed_minutes: dict[str, int] = {}  # campaign ID -> guessed minutes
+        self._confirmed_campaigns: set[str] = set()  # Twitch confirmed progress on these
+        self._last_confirmation: float = 0.0  # time() of the last confirmed progress
         # NOTE: GQL is pretty volatile and breaks everything if one runs into their rate limit.
         # Do not modify the default, safe values.
         self._qgl_limiter = RateLimiter(capacity=5, window=1)
@@ -557,6 +567,7 @@ class Twitch:
         self.wanted_games.clear()
         self._mnt_triggers.clear()
         self._deadline_triggers.clear()
+        self.clear_stalled()
         # wait at least half a second + whatever it takes to complete the closing
         # this allows aiohttp to safely close the session
         await asyncio.sleep(start_time + 0.5 - time())
@@ -712,8 +723,14 @@ class Twitch:
                 )
                 # Campaigns that can still be completed in time are preferred. Ones that
                 # can't are only used if there is nothing else to mine.
+                # The same goes for campaigns that were mined without earning anything.
                 skip_unfinishable = self.settings.skip_unfinishable
-                for require_finishable in ((True, False) if skip_unfinishable else (False,)):
+                selection_passes: list[tuple[bool, bool]] = [
+                    (require_finishable, allow_stalled)
+                    for require_finishable in ((True, False) if skip_unfinishable else (False,))
+                    for allow_stalled in ((False, True) if self.settings.skip_stalled else (True,))
+                ]
+                for require_finishable, allow_stalled in selection_passes:
                     for campaign in sorted_campaigns:
                         game: Game = campaign.game
                         if (
@@ -724,6 +741,7 @@ class Twitch:
                             # and can be progressed within the next hour
                             and campaign.can_earn_within(next_hour)
                             and (not require_finishable or campaign.can_finish())
+                            and (allow_stalled or not campaign.stalled)
                         ):
                             # non-excluded games with no priority are placed last,
                             # below priority ones
@@ -1022,6 +1040,12 @@ class Twitch:
                 if drop_data is not None:
                     gql_drop: TimedDrop | None = self._drops.get(drop_data["dropID"])
                     if gql_drop is not None and gql_drop.can_earn(channel):
+                        if drop_data["currentMinutesWatched"] > gql_drop.real_current_minutes:
+                            self._confirm_progress(gql_drop.campaign)
+                        else:
+                            # Twitch knows about the drop, but another minute went by
+                            # without it getting any closer
+                            self._note_unconfirmed(gql_drop.campaign)
                         gql_drop.update_minutes(drop_data["currentMinutesWatched"])
                         drop_text: str = (
                             f"{gql_drop.name} ({gql_drop.campaign.game}, "
@@ -1035,6 +1059,8 @@ class Twitch:
                 if not handled:
                     if (active_campaign := self.get_active_campaign(channel)) is not None:
                         active_campaign.bump_minutes(channel)
+                        # this minute is only a guess
+                        self._note_unconfirmed(active_campaign)
                         # NOTE: This usually gets overwritten below
                         drop_text = f"Unknown drop ({active_campaign.game})"
                         if (active_drop := active_campaign.first_drop) is not None:
@@ -1083,6 +1109,86 @@ class Twitch:
         # this triggers a restart of this task every (up to) 60 minutes
         logger.log(CALL, "Maintenance task requests a reload")
         self.change_state(State.INVENTORY_FETCH)
+
+    def is_stalled(self, campaign: DropsCampaign) -> bool:
+        """
+        True if the campaign earned no progress while being mined, and is set aside for now.
+        """
+        until = self._stalled.get(campaign.id)
+        if until is None:
+            return False
+        if until <= datetime.now(timezone.utc):
+            # it's been long enough - give it another chance
+            del self._stalled[campaign.id]
+            return False
+        return self.settings.skip_stalled
+
+    def clear_stalled(self) -> None:
+        """
+        Forget everything stall detection has learned, so every campaign gets a fresh try.
+        """
+        self._stalled.clear()
+        self._unconfirmed_minutes.clear()
+        self._confirmed_campaigns.clear()
+        self._last_confirmation = 0.0
+
+    def _confirm_progress(self, campaign: DropsCampaign) -> None:
+        """
+        Called when Twitch itself reports that a campaign's drop has progressed.
+        """
+        self._last_confirmation = time()
+        self._confirmed_campaigns.add(campaign.id)
+        self._unconfirmed_minutes.pop(campaign.id, None)
+        if campaign.id in self._stalled:
+            # A campaign we've set aside is earning after all, so whatever stopped the
+            # progress wasn't about this campaign (a Twitch hiccup, most likely).
+            # Others may have been set aside for the same reason: give them all a fresh try.
+            self._stalled.clear()
+            self._unconfirmed_minutes.clear()
+            self.gui.inv.refresh_status()
+            self.change_state(State.GAMES_UPDATE)
+
+    def _note_unconfirmed(self, campaign: DropsCampaign) -> None:
+        """
+        Called for every minute of a campaign's progress that Twitch didn't confirm.
+
+        A campaign that has never earned anything, and keeps on not earning anything while
+        we watch a stream for it, is most likely tied to an account that isn't linked.
+        Twitch doesn't tell us the linkage for campaigns we have no progress in, so this is
+        how we find out. Such a campaign is set aside for a while, so that it doesn't
+        hold up the campaigns that can be earned.
+        """
+        if (
+            not self.settings.skip_stalled
+            or campaign.started  # Twitch has credited it before, so this is something else
+            or campaign.id in self._confirmed_campaigns
+            or campaign.id in self._stalled  # already set aside, mined as the last resort
+            # Twitch is crediting some other campaign right now, instead of this one
+            or time() - self._last_confirmation < STALL_CONFIRM_WINDOW.total_seconds()
+        ):
+            return
+        minutes = self._unconfirmed_minutes.get(campaign.id, 0) + 1
+        if minutes < STALL_MINUTES:
+            self._unconfirmed_minutes[campaign.id] = minutes
+            return
+        self._unconfirmed_minutes.pop(campaign.id, None)
+        self._stalled[campaign.id] = datetime.now(timezone.utc) + STALL_BENCH
+        logger.log(CALL, f"Campaign set aside, no confirmed progress: {campaign}")
+        self.print(
+            _("status", "stalled").format(
+                campaign=f"{campaign.game.name} ({campaign.name})",
+                minutes=minutes,
+                hours=round(STALL_BENCH.total_seconds() / 3600),
+            )
+        )
+        if campaign.link_url:
+            self.print(_("status", "stalled_link").format(url=campaign.link_url))
+        self.gui.tray.notify(
+            f"{campaign.game.name}\n{campaign.name}", _("status", "stalled_title")
+        )
+        self.gui.inv.refresh_status()
+        # pick the games again, this time without this campaign
+        self.change_state(State.GAMES_UPDATE)
 
     def can_watch(self, channel: Channel) -> bool:
         """
@@ -1286,6 +1392,7 @@ class Twitch:
                 return
             drop.update_claim(message["data"]["drop_instance_id"])
             campaign = drop.campaign
+            self._confirm_progress(campaign)
             await drop.claim()
             drop.display()
             # About 4-20s after claiming the drop, next drop can be started
@@ -1320,6 +1427,8 @@ class Twitch:
         else:
             drop_text = "<Unknown>"
         logger.log(CALL, f"Drop update from websocket: {drop_text}")
+        if drop is not None:
+            self._confirm_progress(drop.campaign)
         if drop is not None and drop.can_earn(self.watching_channel.get_with_default(None)):
             # the received payload is for the drop we expected
             drop.update_minutes(message["data"]["current_progress_min"])
@@ -1731,7 +1840,12 @@ class Twitch:
                 f"{len(catalog_campaigns)} from the public catalog, "
                 f"{len(inventory_data)} in progress"
             )
+            twitch_known: set[str] = set(inventory_data)
             inventory_data = self._merge_data(inventory_data, catalog_campaigns)
+            for campaign_id, campaign_data in inventory_data.items():
+                if campaign_id not in twitch_known:
+                    # known only from the catalog, so "isAccountConnected" is an assumption
+                    campaign_data["self"]["linkAssumed"] = True
         else:
             # Normal clients can still resolve campaign details directly from Twitch.
             fetch_campaigns_tasks: list[asyncio.Task[Any]] = [
@@ -1847,6 +1961,8 @@ class Twitch:
                 campaigns.sort(key=lambda c: (not c.can_finish(), c.remaining_minutes))
             else:
                 campaigns.sort(key=lambda c: c.remaining_minutes)
+            # stable sort: campaigns that were set aside go last
+            campaigns.sort(key=lambda c: c.stalled)
             return campaigns[0]
         return None
 

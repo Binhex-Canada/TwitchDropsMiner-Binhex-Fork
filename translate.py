@@ -19,6 +19,9 @@ class StatusMessages(TypedDict):
     claimed_drop: str
     no_channel: str
     no_campaign: str
+    stalled: str
+    stalled_link: str
+    stalled_title: str
 
 
 class ChromeMessages(TypedDict):
@@ -136,7 +139,9 @@ class GUIInvFilter(TypedDict):
 
 class GUIInvStatus(TypedDict):
     linked: str
+    link_unknown: str
     not_linked: str
+    stalled: str
     active: str
     expired: str
     upcoming: str
@@ -164,6 +169,7 @@ class GUISettingsGeneral(TypedDict):
     dark_mode: str
     priority_mode: str
     skip_unfinishable: str
+    skip_stalled: str
     keep_awake: str
     proxy: str
 
@@ -246,6 +252,12 @@ default_translation: Translation = {
         "claimed_drop": "Claimed drop: {drop}",
         "no_channel": "No available channels to watch. Waiting for an ONLINE channel...",
         "no_campaign": "No active campaigns to mine drops for. Waiting for an active campaign...",
+        "stalled": (
+            "No drop progress on {campaign} after {minutes} minutes - "
+            "setting it aside for {hours} hours. Is the game account linked?"
+        ),
+        "stalled_link": "Link the account here: {url}",
+        "stalled_title": "No drop progress",
     },
     "login": {
         "unexpected_content": (
@@ -358,8 +370,10 @@ default_translation: Translation = {
             },
             "status": {
                 "linked": "Linked ✔",
+                "link_unknown": "Link status unknown",
                 "not_linked": "Not Linked ❌",
                 "active": "Active ✔",
+                "stalled": "No progress - check linking ⚠",
                 "upcoming": "Upcoming ⏳",
                 "expired": "Expired ❌",
                 "claimed": "Claimed ✔",
@@ -382,6 +396,7 @@ default_translation: Translation = {
                 "dark_mode": "Dark mode: ",
                 "priority_mode": "Priority mode: ",
                 "skip_unfinishable": "Skip drops that can't finish in time: ",
+                "skip_stalled": "Skip campaigns that earn no progress: ",
                 "keep_awake": "Keep Mac awake while mining: ",
                 "proxy": "Proxy (requires restart):",
             },
